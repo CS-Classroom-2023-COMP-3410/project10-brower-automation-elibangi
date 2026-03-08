@@ -1,23 +1,24 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
-// TODO: Load the credentials from the 'credentials.json' file
-// HINT: Use the 'fs' module to read and parse the file
-const credentials = TODO;
+// added the credentials, package-lock, and package json files to .gitignore as stated in ReadMe.md
+
+// Load the credentials from the 'credentials.json' file
+const credentials = fs.readFileSync('credentials.json');
+const { username, password } = JSON.parse(credentials);
 
 (async () => {
-    // TODO: Launch a browser instance and open a new page
-    const browser = TODO;
-    const page = TODO;
+    // Launch a browser instance and open a new page
+    const browser = await puppeteer.launch({headless: false,  args: ['--no-sandbox', '--disable-setuid-sandbox']}); // removing the sandbox to run the code
+    const page = await browser.newPage();
 
     // Navigate to GitHub login page
     await page.goto('https://github.com/login');
 
-    // TODO: Login to GitHub using the provided credentials
-    // HINT: Use the 'type' method to input username and password, then click on the submit button
-    await TODO;
-    await TODO;
-    await TODO;
+    // Login to GitHub using the provided credentials
+    await page.type('#login_field', username);
+    await page.type('#password', password);
+    await page.click('input[name="commit"]');
 
     // Wait for successful login
     await page.waitForSelector('.avatar.circle');
@@ -30,48 +31,50 @@ const credentials = TODO;
     for (const repo of repositories) {
         await page.goto(`https://github.com/${repo}`);
 
-        // TODO: Star the repository
-        // HINT: Use selectors to identify and click on the star button
-        await TODO;
-        await TODO; // This timeout helps ensure that the action is fully processed
+        // Star the repository
+        await page.click('form[action$="/star"] button',{ visible: true });
+        await new Promise(resolve => setTimeout(resolve, 1000)); // This timeout helps ensure that the action is fully processed
+
     }
 
-    // TODO: Navigate to the user's starred repositories page
-    await page.goto(TODO);
+    // Navigate to the user's starred repositories page
+    await page.goto(`https://github.com/${actualUsername}?tab=stars`);
 
-    // TODO: Click on the "Create list" button
-    await TODO;
-    await TODO;
+    // Click on the "Create list" button
+    await page.waitForSelector('.Button--primary.Button--medium.Button');
+    await page.click('.Button--primary.Button--medium.Button');
 
-    // TODO: Create a list named "Node Libraries"
-    // HINT: Wait for the input field and type the list name
-    await TODO;
-    await TODO;
-
+    // Create a list named "Node Libraries"
+    await page.waitForSelector('#user_list_name');
+    await page.type('#user_list_name', 'Node Libraries');
     // Wait for buttons to become visible
-    await page.waitForTimeout(1000);
+    // Puppeteer removed waitfortimeout in versions on/after 23, so I'ma use promise
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // Identify and click the "Create" button
     const buttons = await page.$$('.Button--primary.Button--medium.Button');
     for (const button of buttons) {
         const buttonText = await button.evaluate(node => node.textContent.trim());
         if (buttonText === 'Create') {
+            await button.click();
+            // this may look silly, but Github didn't actually register the first click - I tested this by creating a test list manually and clicking create button
+            // Github first verifies the name on first click and on second click, that's when the list is actually created
+            await new Promise(resolve => setTimeout(resolve, 500));
             await button.click();
             break;
         }
     }
 
     // Allow some time for the list creation process
-    await page.waitForTimeout(2000);
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     for (const repo of repositories) {
         await page.goto(`https://github.com/${repo}`);
 
-        // TODO: Add this repository to the "Node Libraries" list
-        // HINT: Open the dropdown, wait for it to load, and find the list by its name
-        await TODO;
-        await TODO;
-        await TODO;
+        // Add this repository to the "Node Libraries" list
+        const dropdownSelector = 'details.js-user-list-menu';
+        await page.waitForSelector(dropdownSelector);
+        await page.click(dropdownSelector);
+        await new Promise(resolve => setTimeout(resolve, 1000));
         const lists = await page.$$('.js-user-list-menu-form');
 
         for (const list of lists) {
@@ -84,12 +87,18 @@ const credentials = TODO;
         }
 
         // Allow some time for the action to process
-        await page.waitForTimeout(1000);
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         // Close the dropdown to finalize the addition to the list
         await page.click(dropdownSelector);
-      }
 
+        await new Promise(resolve => setTimeout(resolve, 1000)); // wait for the action to complete before moving to the next repository
+      }
+    // Go back to the stars page to make sure the list is created
+    await page.goto(`https://github.com/${actualUsername}?tab=stars`);
+    new Promise(resolve => setTimeout(resolve, 1000)); // Wait for the page to load completely before taking the screenshot
+    // verifying that I have the Node Libraries list + the starred repositories
+    await page.screenshot({ path: 'stars_page.png', fullPage: true });
     // Close the browser
     await browser.close();
 })();
